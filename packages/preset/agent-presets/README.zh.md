@@ -8,11 +8,11 @@
 
 ## 服务：`AgentPresets`（ctx 键：`agentPresets`）
 
-发现过程不做缓存：`list()` 与 `resolve()` 每次调用都重新读取各个根目录，因此进程运行期间新写的 preset 立即可见，被删除的 preset 也会在下一次读取时消失。发现过程同时负责 preset 的**健康**：组装文件缺失或不可加载（YAML 无法解析——用加载器自己的方言检查，含 `!!js`——或不是由具名插件行组成的列表）的目录会作为携带 `broken` 原因的行列出而不是被跳过，因为被跳过的目录仍在磁盘上占着它的 id，而各个界面却没有任何可删的东西。目录名不是可用 preset id（`[a-z0-9][a-z0-9-]*`）的目录才被直接跳过：复制永远不可能占用那种名字。
+发现过程不做缓存：`list()` 与 `resolve()` 每次调用都重新读取各个根目录，因此进程运行期间新写的 preset 立即可见，被删除的 preset 也会在下一次读取时消失。若部署配置了 `allowedIds`，过滤会在根目录优先级解析之后执行，名单、解析、挂载、冷读与创作都看不到其他 id。发现过程同时负责 preset 的**健康**：组装文件缺失或不可加载（YAML 无法解析——用加载器自己的方言检查，含 `!!js`——或不是由具名插件行组成的列表）的目录会作为携带 `broken` 原因的行列出而不是被跳过，因为被跳过的目录仍在磁盘上占着它的 id，而各个界面却没有任何可删的东西。目录名不是可用 preset id（`[a-z0-9][a-z0-9-]*`）的目录才被直接跳过：复制永远不可能占用那种名字。
 
-- `ctx.agentPresets.defaultId: string` 调用方未指定时挂载的 preset id。
-- `ctx.agentPresets.list(): Promise<AgentPreset[]>` 当前各根目录提供的全部 preset；id 重复时靠前的根目录胜出；损坏的 preset 也在其中，各自携带原因。
-- `ctx.agentPresets.resolve(id?): Promise<AgentPreset>` 按 id 取一个 preset，缺省取 `defaultId`。没有任何根目录提供该 id 时抛错，并列出可用 id。损坏的 preset 照样解析——删除、读取与上报都需要这一行。
+- `ctx.agentPresets.defaultId: string` 调用方未指定时挂载的 preset id；用户设置不在 `allowedIds` 内时回退到 `config.default`。
+- `ctx.agentPresets.list(): Promise<AgentPreset[]>` 当前各根目录提供的全部获准 preset；id 重复时靠前的根目录胜出；损坏的 preset 也在其中，各自携带原因。
+- `ctx.agentPresets.resolve(id?): Promise<AgentPreset>` 按 id 取一个获准 preset，缺省取 `defaultId`。获准名单中没有该 id 时抛错，并列出可用 id。损坏的 preset 照样解析——删除、读取与上报都需要这一行。
 - `ctx.agentPresets.mount(agentCtx, id?): Promise<AgentPreset>` 用一个 preset 组装一个 agent——确保其常驻挂载（并发去重）并把 agent 的 scope key 认父到它——返回该 preset 供调用方记录。对损坏的 preset 直接以发现时记下的原因拒绝，所以每种不可加载的形态都在加载器介入之前以同一方式失败。
 - `ctx.agentPresets.composeFrom(agentCtx, parentCtx): string | undefined` 让一个 agent 加入另一个 agent 已在运行的常驻组装，返回所加入的 preset id——父方未加入任何 preset 时返回 `undefined`，那是无 roster 的部署，不是错误。这是认父而非挂载，因此同步、且自身没有组装失败模式；调用方用错（上下文无 scope、agent 已加入过）仍会拒绝。
 - `ctx.agentPresets.composedPreset(agentCtx): string | undefined` 某个**活着的** agent 正在运行的 preset，从其 scope 链读取而不是从其会话读取——对于持久化 header 尚在构建中的 agent，这是唯一能拿到的答案。
@@ -21,7 +21,7 @@
 - `ctx.agentPresets.roots: readonly PresetRoot[]` 本 roster 实际扫描的根目录——全部已配置根目录按序在前，随后是推导出的 harness home 根目录。它不是 `config.roots`：判断「是否已组装 roster」应读它，从而由同一处推导决定。
 - `ctx.agentPresets.authorable: boolean` 上述根目录中是否有任一具备 `user` 信任级别，因而 preset 是否可创建。
 - `ctx.agentPresets.read(id): Promise<string>` 某个 preset 的组装文本，与存储内容逐字一致。
-- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——唯一的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。
+- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——唯一的创作写入。配置 `allowedIds` 时，来源与目标 id 都必须在其中。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。
 - `ctx.agentPresets.remove(id): Promise<void>` 删除一个本地创作的 preset；已加入的会话保留其常驻挂载。若用户默认值恰好指向刚删除的 preset 则一并清除：存一个尚不存在的默认值是刻意的，但本次删除的这个再也不会有人提供，留着会让所有未显式指定的新会话无法启动。
 
 `AgentPreset` 携带 `id`（目录名）、`trust`（`system` 或 `user`，取自它所在的根目录）、`path`（组装文件的绝对路径），以及——仅当该 preset 无法组装会话时——`broken`（一条人类可读的原因，名单界面原样展示）。
@@ -44,6 +44,8 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 
 头部保持冻结，因为它是创建期事实。切换以 `agent-preset/selected` 会话事件记录，在替换提交之后追加；这正是 model-visible ⟺ logged 规则的要求：preset 决定模型看到的工具 schema 与提示词段落，因此必须能从日志重建。服务会把这项已提交事实重新发为不带 scope 的 cordis 事件 `agent-preset/selected(sessionId, agentPreset)`，其声明位于 client-safe 的 `./types` 出口，使远端消费方无需导入 Host 运行时类型即可让会话派生状态失效。只读头部会让切换过的会话按创建时的组装重建，从而重放新工具集无法执行的历史——这正是「仅空白可切」那道锁要防的危险。
 
+resume 或 fork 会显式传入这个已存 id。若后续部署通过 `allowedIds` 排除它，重建会以未知 preset 失败；系统不会改用当前默认值，静默改变该会话的工具与提示词历史。
+
 ### 切换空白 agent
 
 `recompose()` 先卸载已装入的子树、再装入新的，因为两份组装无法共存——它们会把相同的工具名注册进同一个层。挂载失败会恢复先前的组装，而不是让 agent 一无所有；未知 id 则在任何东西被拆除之前就被拒绝。
@@ -52,11 +54,12 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 
 ## 创作
 
-创作即复制。新 preset 是某个既有 preset 的整目录副本——组装、元数据、skill 目录、附带资产——落在首个 `user` 根目录之下；输入只有两个由服务对照自身根目录解析的 id 加一个可选显示名，因此调用方从不提供组装文本，一次复制不会授予 roster 尚未携带的任何能力。创建之后的一切都发生在 preset 自己的文件里。`copy()` 在任何内容落盘之前拒绝三种情况：
+创作即复制。新 preset 是某个既有 preset 的整目录副本——组装、元数据、skill 目录、附带资产——落在首个 `user` 根目录之下；输入只有两个由服务对照自身根目录解析的 id 加一个可选显示名，因此调用方从不提供组装文本，一次复制不会授予 roster 尚未携带的任何能力。创建之后的一切都发生在 preset 自己的文件里。`copy()` 在任何内容落盘之前拒绝四种情况：
 
 - **不符合 `[a-z0-9][a-z0-9-]*` 的 id。** id 会成为目录名，因此约束是 id 自身的性质，而非事后再做一次路径检查——`../escape`、`a/b` 与绝对路径都作为 id 被拒绝。
 - **已被占用的 id。** 复制从不覆写：任一根目录已提供该 id 即拒绝（与随附 preset 同名的用户目录只会被它遮蔽），磁盘上占着该名字的目录同样拒绝。发现过程会把这样的目录列为损坏的 preset，所以这条拒绝的出路——删掉它——就在报告它的同一页面上。
 - **未知的来源。** 来源可以是任何信任级别——复制随附 preset 正是主要用途——但必须存在；复制失败会回滚做到一半的目录，而不是留下一个 discovery 看不见的目录。
+- **不在 `allowedIds` 内的 id。** 钉住名单的部署不能创作出每次读取都会隐藏的行。
 
 复制出的目录树被收紧为仅属主可用（文件 `0o600` 并保留属主执行位，目录 `0o700`），符号链接被解引用以保证副本自包含，且根目录在首次复制时创建——部署配置了尚不存在的用户根目录，正是首次运行的正常状态。复制出的 `preset.yml` 会被重写：保留来源的描述供作者就地编辑，但丢弃其名称与 roster `order`——副本若与来源呈现得一模一样、或按随附集合声明的顺序排序，roster 就不再能区分它们。`remove()` 拒绝随部署提供的 preset；随附集合正是副本的已知良好起点。
 
@@ -86,10 +89,13 @@ description: 仅提供持久 bash 与 str_replace_editor 的双工具编码 Agen
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `default` | 必填 | 调用方未指定时挂载的 preset id |
+| `allowedIds` | 未设置 | 可选的部署 roster allowlist |
 | `roots` | `[]` | 按优先级排列的扫描目录；每项提供 `path`（开头的 `~` 会展开）与 `trust`（默认为 `user`） |
 | `includeUserRoot` | `true` | 在全部已配置根目录之后，追加 `<dshHome>/.agent-presets` 作为 `user` 根目录 |
 
 根目录不存在时视为不提供任何 preset，而非失败：用户根目录在写出第一个本地 preset 之前并不存在，而指定了没有任何根目录提供的默认值，在解析时本就会明确报错。
+
+一旦设置，`allowedIds` 必须非空、仅含合法且不重复的 preset id，并包含 `default`；无效配置会在服务构造期间失败。服务会复制这组 id，再在根目录发现之后据此过滤。获准 id 可以暂时不存在于磁盘，以便部署为以后创作的 preset 预留位置，但在根目录实际提供之前解析仍会失败。不设置 `allowedIds` 时保留不受限名单的既有行为。
 
 ### 可写根目录属于本包，随附根目录属于 app
 
@@ -110,7 +116,7 @@ agent-presets:
   default: minimal
 ```
 
-该值在每次解析时读取而非快照，因此热重载的文档对**此后创建**的会话生效，而每个运行中的会话仍停留在它当初据以组装的 preset 上。清空用户字段即重新继承组装默认值。若默认值指向没有任何根目录提供的 preset，写入时不会报错，而在下一次 `resolve()` 时失败——名单是一个活动目录，此刻不存在的名字，等到某个会话真正索取时可能已经存在。
+该值在每次解析时读取而非快照，因此热重载的文档对**此后创建**的会话生效，而每个运行中的会话仍停留在它当初据以组装的 preset 上。清空用户字段即重新继承组装默认值。配置 `allowedIds` 时，名单外的用户值回退到 `config.default`；名单内但当前没有任何根目录提供的值仍可写入，并在下一次 `resolve()` 时失败——名单是一个活动目录，等到某个会话真正索取时该名字可能已经存在。
 
 ## 挂载会拒绝什么
 

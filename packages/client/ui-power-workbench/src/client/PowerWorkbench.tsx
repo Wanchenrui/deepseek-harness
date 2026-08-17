@@ -1,6 +1,7 @@
 /** Extensible power-software workbench shell and its default read-only panels. */
 
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { PowerAnalysisSnapshot } from '@deepseek-ai/dsh-power-analysis/client'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -21,7 +22,12 @@ export interface PowerWorkbenchPanelOwnerProps {
   pendingInteractions: number
   /** Messages admitted to the transient queue. */
   queuedMessages: number
+  /** Latest durable power-analysis projection; null/undefined means no accepted report. */
+  analysis: PowerAnalysisSnapshot | null | undefined
 }
+
+/** Session-only portion derived before the independent analysis projection is joined. */
+export type PowerWorkbenchSessionPanelProps = Omit<PowerWorkbenchPanelOwnerProps, 'analysis'>
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -70,7 +76,7 @@ export type PowerWorkbenchInspectorProps = PropsRuntime<'power.workbench.inspect
  */
 export function derivePowerWorkbenchPanel(
   snapshot: ConversationSnapshot,
-): PowerWorkbenchPanelOwnerProps {
+): PowerWorkbenchSessionPanelProps {
   let state: PowerWorkbenchPanelOwnerProps['state']
   if (snapshot.removed) state = 'removed'
   else if (snapshot.openState === 'cold' || snapshot.openState === 'loading') state = 'loading'
@@ -94,9 +100,15 @@ function stateKey(state: PowerWorkbenchPanelOwnerProps['state']): PowerWorkbench
   return `state.${state}`
 }
 
+function booleanKey(value: boolean): PowerWorkbenchKey {
+  return value ? 'analysis.boolean.true' : 'analysis.boolean.false'
+}
+
 /** Main workbench shell; independently registered panels fill its three child slots. */
-export function PowerWorkbench({ useSession, renderSlot, t }: PowerWorkbenchProps) {
-  const panel = useSession(derivePowerWorkbenchPanel)
+export function PowerWorkbench({ useSession, useProjection, renderSlot, t }: PowerWorkbenchProps) {
+  const sessionPanel = useSession(derivePowerWorkbenchPanel)
+  const analysis = useProjection('power/analysis')
+  const panel: PowerWorkbenchPanelOwnerProps = { ...sessionPanel, analysis }
   return (
     <main className={css.root} aria-labelledby="power-workbench-title">
       <section className={css.hero}>
@@ -134,7 +146,7 @@ export function PowerWorkbench({ useSession, renderSlot, t }: PowerWorkbenchProp
 
 /** Default overview contribution showing only current Session projection counts. */
 export function SessionPulsePanel({
-  state, completedTurns, loadedEvents, runningTools, pendingInteractions, queuedMessages, t,
+  state, completedTurns, loadedEvents, runningTools, pendingInteractions, queuedMessages, analysis, t,
 }: PowerWorkbenchPanelProps) {
   const metrics = [
     [t('overview.turns'), completedTurns],
@@ -161,12 +173,22 @@ export function SessionPulsePanel({
           </div>
         ))}
       </div>
+      <div className={css.projectionDigest} data-testid="power-projection-digest">
+        {analysis == null
+          ? <span>{t('analysis.empty')}</span>
+          : (
+            <>
+              <strong>{t(`analysis.status.${analysis.status}`)}</strong>
+              <span>/{analysis.workflow} · {analysis.summary}</span>
+            </>
+          )}
+      </div>
     </article>
   )
 }
 
 /** Default primary contribution: domain map plus the risk-ordered validation ladder. */
-export function EngineeringWorkspacePanel({ t }: PowerWorkbenchWorkspaceProps) {
+export function EngineeringWorkspacePanel({ analysis, t }: PowerWorkbenchWorkspaceProps) {
   const domains = [
     ['timing', t('domain.timing'), t('domain.timing.detail')],
     ['control', t('domain.control'), t('domain.control.detail')],
@@ -182,8 +204,50 @@ export function EngineeringWorkspacePanel({ t }: PowerWorkbenchWorkspaceProps) {
     [t('flow.targetRead'), t('flow.gated'), 'gated'],
     [t('flow.controlledWrite'), t('flow.gated'), 'gated'],
   ] as const
+  const evidenceCount = analysis?.claims.reduce((total, claim) => total + claim.evidence.length, 0) ?? 0
   return (
     <>
+      <article className={css.panel} data-testid="power-analysis-projection">
+        <div className={css.panelKicker}>{t('analysis.kicker')}</div>
+        <h2 className={css.panelTitle}>{t('analysis.title')}</h2>
+        {analysis == null
+          ? <p className={css.emptyState}>{t('analysis.emptyDetail')}</p>
+          : (
+            <>
+              <div className={css.analysisHeader}>
+                <span className={css.analysisIdentity}>/{analysis.workflow} · {analysis.mode}</span>
+                <span className={css.analysisStatus} data-status={analysis.status}>
+                  {t(`analysis.status.${analysis.status}`)}
+                </span>
+              </div>
+              <p className={css.analysisSummary}>{analysis.summary}</p>
+              <div className={css.analysisMetrics}>
+                <div><strong>{analysis.claims.length}</strong><span>{t('analysis.claims')}</span></div>
+                <div><strong>{evidenceCount}</strong><span>{t('analysis.evidence')}</span></div>
+                <div><strong>{analysis.findings.length}</strong><span>{t('analysis.findings')}</span></div>
+                <div><strong>{analysis.unknowns.length}</strong><span>{t('analysis.unknowns')}</span></div>
+              </div>
+              <div className={css.buildRow}>
+                <span>{t('analysis.build')}</span>
+                <strong data-build={analysis.build.declaration}>
+                  {t(`analysis.build.${analysis.build.declaration}`)}
+                </strong>
+              </div>
+              <ol className={css.findingList} aria-label={t('analysis.findings')}>
+                {analysis.findings.slice(0, 4).map(finding => (
+                  <li key={`${finding.severity}:${finding.title}`} className={css.finding} data-severity={finding.severity}>
+                    <div>
+                      <strong>{finding.title}</strong>
+                      <span>{finding.location ?? t('analysis.locationUnknown')}</span>
+                    </div>
+                    <p>{finding.impact}</p>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+      </article>
+
       <article className={css.panel} data-testid="power-domain-map">
         <div className={css.panelKicker}>{t('domains.kicker')}</div>
         <h2 className={css.panelTitle}>{t('domains.title')}</h2>
@@ -220,7 +284,7 @@ export function EngineeringWorkspacePanel({ t }: PowerWorkbenchWorkspaceProps) {
 }
 
 /** Default inspector contribution making execution ownership explicit. */
-export function SafetyBoundaryPanel({ t }: PowerWorkbenchInspectorProps) {
+export function SafetyBoundaryPanel({ analysis, t }: PowerWorkbenchInspectorProps) {
   const boundaries = [
     [t('safety.ui'), t('safety.ui.detail'), 'active'],
     [t('safety.gateway'), t('safety.gateway.detail'), 'absent'],
@@ -228,6 +292,27 @@ export function SafetyBoundaryPanel({ t }: PowerWorkbenchInspectorProps) {
   ] as const
   return (
     <>
+      <article className={css.panel} data-testid="power-analysis-safety">
+        <div className={css.panelKicker}>{t('analysis.safetyKicker')}</div>
+        <h2 className={css.panelTitle}>{t('analysis.safetyTitle')}</h2>
+        {analysis == null
+          ? <p className={css.emptyState}>{t('analysis.safetyEmpty')}</p>
+          : (
+            <dl className={css.safetyFacts}>
+              <div><dt>{t('analysis.targetAuthorization')}</dt><dd>{t('analysis.notGranted')}</dd></div>
+              <div><dt>{t('analysis.targetExecution')}</dt><dd>{t('analysis.notPerformed')}</dd></div>
+              <div><dt>{t('analysis.physicalActuation')}</dt><dd>{t('analysis.notPerformed')}</dd></div>
+              <div>
+                <dt>{t('analysis.safetyChanges')}</dt>
+                <dd>{t(booleanKey(analysis.safetyBoundary.safetyParametersChanged))}</dd>
+              </div>
+              <div><dt>API</dt><dd>{t(`analysis.compatibility.${analysis.compatibility.api}`)}</dd></div>
+              <div><dt>ABI</dt><dd>{t(`analysis.compatibility.${analysis.compatibility.abi}`)}</dd></div>
+              <div><dt>NVM</dt><dd>{t(`analysis.compatibility.${analysis.compatibility.nvm}`)}</dd></div>
+            </dl>
+          )}
+      </article>
+
       <article className={css.panel} data-testid="power-safety-boundary">
         <div className={css.panelKicker}>{t('safety.kicker')}</div>
         <h2 className={css.panelTitle}>{t('safety.title')}</h2>

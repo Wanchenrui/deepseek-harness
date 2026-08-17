@@ -393,12 +393,12 @@ Source: [`packages/core/agent-loop/src/index.ts:296`](../../packages/core/agent-
 
 Registry over the deployment's agent presets.
 
-Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read.
+Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read. A configured allowlist filters each fresh result before any caller can use it.
 
 ```ts cordis-catalog
 /**
- * Every preset the configured roots currently supply.
- * @returns the presets, first-root-wins per id.
+ * Every permitted preset the configured roots currently supply.
+ * @returns the filtered presets, first-root-wins per id.
  */
 async list(): Promise<AgentPreset[]>
 
@@ -410,7 +410,7 @@ async list(): Promise<AgentPreset[]>
  * through {@link resolveMountable}.
  * @param id - the preset id, or `undefined` for {@link defaultId}.
  * @returns the resolved preset.
- * @throws when no configured root supplies that id.
+ * @throws when the id is disallowed or no configured root supplies it.
  */
 async resolve(id?: string): Promise<AgentPreset>
 
@@ -488,8 +488,8 @@ async read(id: string): Promise<string>
  * primary source, so any trust is accepted.
  * @param id - the new preset's id, which becomes its directory name.
  * @param name - display name for the copy; absent falls back to the id.
- * @throws when the source is unknown, the id is unusable or already taken,
- * or the deployment configures no writable root.
+ * @throws when the source is unknown, the id is disallowed, unusable, or
+ * already taken, or the deployment configures no writable root.
  */
 async copy(from: string, id: string, name?: string): Promise<void>
 
@@ -556,7 +556,7 @@ async standingKeyFor(id?: string): Promise<ScopeKey>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/preset/agent-presets/src/index.ts:82`](../../packages/preset/agent-presets/src/index.ts)
+Source: [`packages/preset/agent-presets/src/index.ts:85`](../../packages/preset/agent-presets/src/index.ts)
 
 <a id="ctxagents--agentregistry"></a>
 

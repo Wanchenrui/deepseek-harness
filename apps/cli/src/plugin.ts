@@ -7,6 +7,8 @@
  * removed or bundle-less dependency leaves it). Reconciling by installed
  * state, not by dependency diff, means `update` activates a package that
  * gained its `dsh.bundle` declaration in a newer version.
+ * The sealed Power Desktop profile rejects this command before profile or
+ * pnpm state is inspected or changed.
  * @module @deepseek-ai/dsh/plugin
  */
 
@@ -16,6 +18,7 @@ import { join, resolve } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
+  isSealedProfile,
   PROFILE_TEMPLATES,
   readProfileManifest,
   resolveBundleDir,
@@ -118,6 +121,10 @@ function anchorPathSpec(argument: string, cwd: string): string {
  * @returns the pnpm exit code.
  */
 export function runPlugin(profile: string, args: readonly string[]): number {
+  if (isSealedProfile(profile)) {
+    process.stderr.write(`${NAME}: sealed profile ${JSON.stringify(profile)} does not allow plugin management\n`)
+    return 1
+  }
   const dir = resolveProfileDir(profile)
   if (!existsSync(join(dir, 'package.json'))) {
     initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)

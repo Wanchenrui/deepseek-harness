@@ -9,11 +9,12 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | Command | Purpose |
 |---|---|
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
+| `dsh --profile power` | Boot the sealed Power Desktop profile. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The invoking directory is the default workspace root. The `web`, `headless`, and `power` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`. `power` is installation-owned: it rejects profile and home patch files, `--patch`, and `dsh plugin`, and it does not watch user patch files. Before mounting plugins, it canonicalizes the workspace and rejects equality or either-direction containment with the CLI installation, shipped presets, root config, resolved bundles, or a source checkout that supplies them.
 
 ## App arguments
 
@@ -29,14 +30,14 @@ dsh --help                          # the launcher's own help
 
 ## Profiles
 
-A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml` (the user's own patch layer).
+A mutable profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml` (the user's own patch layer). The sealed `power` directory has no `cordis.patch.yml`; its manifest must list exactly base, web-app, and power-desktop in that order.
 
 The tree composes over an empty root:
 - each bundle's patch in `dsh.profile.bundles` order
 - then the profile's `cordis.patch.yml`, then the home-level `$DSH_HOME/cordis.patch.yml`
 - then `--patch` overlays
 
-Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins.
+Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`, `@deepseek-ai/dsh-power-desktop`), then from the profile's own `node_modules`, where pnpm installs out-of-tree plugins. The sealed profile additionally anchors every bare plugin name to the dsh installation, so profile-local packages cannot shadow its shipped closure.
 
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 

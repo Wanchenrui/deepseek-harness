@@ -1,0 +1,53 @@
+# The fail-closed, read-only power-software preset. The host owns registries,
+# persistence, the model route, the Esafenet filesystem provider, the process
+# sandbox provider, and approval. This standing preset contributes only scoped
+# prompt, analysis, policy, filesystem, and workspace-instruction registrations.
+
+- id: power-prompt
+  name: '@deepseek-ai/dsh-power-prompt'
+  config:
+    sourceAccess: powershell-fixed
+    sourceMutation: read-only
+    verification: static-only
+
+- id: power-policy
+  name: '@deepseek-ai/dsh-power-policy'
+  config:
+    mode: review
+
+- id: power-analysis
+  name: '@deepseek-ai/dsh-power-analysis'
+  config:
+    mode: review
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# The sandbox policy is preset-owned so selecting review fixes the standing
+# mode at read-only. It shares one entry-local realm with tool-fs, the consumer
+# that resolves the per-call policy. The Esafenet provider and the underlying
+# process sandbox remain host services and receive the resolved call policy.
+- id: filesystem-authority
+  name: cordis:group
+  group: true
+  isolate:
+    sandboxPolicy: true
+  config:
+    - id: power-review-sandbox-policy
+      name: '@deepseek-ai/dsh-sandbox-policy'
+      config:
+        mode: read-only
+        workspaceRoot: !!js process.cwd()
+
+    - id: tool-fs
+      name: '@deepseek-ai/dsh-tool-fs'
+      inject: [sandboxPolicy]
+
+# Search uses packaged ripgrep with fixed argv through ctx.subprocess. It is
+# discovery, not a general process or shell surface.
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false

@@ -24,6 +24,9 @@
       "path": "../ui-slots"
     },
     {
+      "path": "../../power/power-analysis"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

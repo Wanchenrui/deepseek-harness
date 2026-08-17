@@ -1076,9 +1076,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n}',
+      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n  /** Latest durable power-analysis projection; null/undefined means no accepted report. */\n  analysis: PowerAnalysisSnapshot | null | undefined\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'PowerAnalysisSnapshot',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
@@ -1097,7 +1099,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'power.workbench.inspector\', () => ctx.slots.register(\n      { name: \'power.workbench.inspector\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:41',
+    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:47',
   },
   {
     key: 'power.workbench.overview',
@@ -1126,9 +1128,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n}',
+      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n  /** Latest durable power-analysis projection; null/undefined means no accepted report. */\n  analysis: PowerAnalysisSnapshot | null | undefined\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'PowerAnalysisSnapshot',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
@@ -1147,7 +1151,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'power.workbench.overview\', () => ctx.slots.register(\n      { name: \'power.workbench.overview\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:29',
+    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:35',
   },
   {
     key: 'power.workbench.workspace',
@@ -1176,9 +1180,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n}',
+      '/** Session facts passed from the workbench shell to independently registered panels. */\nexport interface PowerWorkbenchPanelOwnerProps {\n  /** Presentation state derived only from the current Session snapshot. */\n  state: \'loading\' | \'idle\' | \'running\' | \'attention\' | \'removed\'\n  /** Completed turns in the currently loaded event window. */\n  completedTurns: number\n  /** Events in the currently loaded compatibility projection. */\n  loadedEvents: number\n  /** Tool calls still running in the current Session. */\n  runningTools: number\n  /** Human interactions currently awaiting an answer. */\n  pendingInteractions: number\n  /** Messages admitted to the transient queue. */\n  queuedMessages: number\n  /** Latest durable power-analysis projection; null/undefined means no accepted report. */\n  analysis: PowerAnalysisSnapshot | null | undefined\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'PowerAnalysisSnapshot',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
@@ -1197,7 +1203,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'power.workbench.workspace\', () => ctx.slots.register(\n      { name: \'power.workbench.workspace\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:35',
+    source: 'packages/client/ui-power-workbench/src/client/PowerWorkbench.tsx:41',
   },
   {
     key: 'root',
@@ -1504,6 +1510,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'settings.section\' (client-ui-settings-plugins), so it exists while that entry is mounted',
     occupants: [
       'client-ui-settings-plugin-inventory PluginInventorySettingsTab id \'all\'',
+      'client-ui-settings-plugin-inventory MarketplaceSettingsTab id \'marketplace\'',
       'client-ui-settings-plugins ConfigurablePluginsTab id \'configurable\'',
     ],
     replaceRisk: 'none',

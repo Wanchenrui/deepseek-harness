@@ -11,11 +11,13 @@
  * and `dsh --profile web -h` prints the web app's help, not this one's.
  *
  * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
- * plugin dependencies by forwarding to pnpm.
+ * plugin dependencies by forwarding to pnpm. The shipped `power` profile is
+ * sealed and rejects both patch overlays and plugin management at parse time.
  * @module @deepseek-ai/dsh/args
  */
 
 import { Command, CommanderError } from 'commander'
+import { isSealedProfile } from '@deepseek-ai/dsh-app-boot'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -64,6 +66,7 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 const HELP_EXAMPLES = `
 Examples:
   dsh --profile web                          boot the web profile (same as: dsh web)
+  dsh --profile power                        boot the sealed Power Desktop profile
   dsh --profile headless "run the tests"     answer one task, print the result, and exit
   dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
   dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
@@ -83,6 +86,9 @@ Examples:
 function resolveBoot(program: Command, profile: string, options: BootOptions, args: string[]): DshInvocation {
   const patches = options.patch ?? []
   if (patches.includes('')) program.error('error: --patch needs a path')
+  if (isSealedProfile(profile) && patches.length > 0) {
+    program.error(`error: sealed profile ${JSON.stringify(profile)} takes no --patch overlays`)
+  }
   if (options.dumpConfig !== true && options.dumpDefaultConfig !== true) {
     return { mode: 'profile', profile, patches, args }
   }
@@ -176,6 +182,9 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
     .action((args: string[], options: { profile: string }) => {
       rejectParentOptions('plugin')
       if (options.profile === '') program.error('error: --profile needs a name')
+      if (isSealedProfile(options.profile)) {
+        program.error(`error: sealed profile ${JSON.stringify(options.profile)} does not allow plugin management`)
+      }
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
     })

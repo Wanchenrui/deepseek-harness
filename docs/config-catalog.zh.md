@@ -177,6 +177,12 @@ export interface Config {
 export interface Config {
   /** Preset id mounted when a caller names none. Missing at mount time fails loud. */
   default: string
+  /**
+   * Optional deployment allowlist. When present, only these preset ids belong
+   * to the roster; it must be non-empty, duplicate-free, and contain
+   * {@link default}.
+   */
+  allowedIds?: string[]
   /** Scanned roots in precedence order; an earlier root wins a duplicate id. */
   roots: PresetRoot[]
   /**
@@ -586,6 +592,28 @@ export interface Config {
 ```
 
 来源：[`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
+
+<a id="deepseek-aidsh-fs-esafenet"></a>
+
+## `@deepseek-ai/dsh-fs-esafenet`
+
+需要：`sandboxPolicy` · `sandbox`
+
+```ts config-catalog
+/** Configuration for the fixed Esafenet content bridge. */
+export interface Config extends LocalConfig {
+  /** Hard timeout for one bridge operation. Defaults to 30 seconds. */
+  operationTimeoutMs?: number
+  /** Maximum text file size accepted by whole-text reads. Defaults to 16 MiB. */
+  maxTextBytes?: number
+  /** Process identity used by the fixed bridge. Windows defaults to a private `code.exe` alias. */
+  processIdentity?: 'native' | 'code-alias'
+}
+```
+
+依赖：[`LocalConfig`](#deepseek-aidsh-fs-local)
+
+来源：[`packages/fs/fs-esafenet/src/index.ts:42`](../packages/fs/fs-esafenet/src/index.ts)
 
 <a id="deepseek-aidsh-fs-local"></a>
 
@@ -1373,6 +1401,73 @@ export interface PlanModeConfig {
 ```
 
 来源：[`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
+
+<a id="deepseek-aidsh-power-analysis"></a>
+
+## `@deepseek-ai/dsh-power-analysis`
+
+需要：`tools` · `commands`
+
+```ts config-catalog
+/** Deployment authority for commands and accepted report snapshots. */
+export interface Config {
+  /** `review` exposes read-only workflows; `fix` exposes only `/fix`. */
+  mode: PowerAnalysisMode
+}
+
+/** Write authority expected by the workflow. */
+export type PowerAnalysisMode = 'review' | 'fix'
+```
+
+来源：[`packages/power/power-analysis/src/index.ts:36`](../packages/power/power-analysis/src/index.ts)
+
+<a id="deepseek-aidsh-power-policy"></a>
+
+## `@deepseek-ai/dsh-power-policy`
+
+需要：`systemPrompt` · `tools`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** `review` is read-only; `fix` additionally permits controlled file mutation. */
+  readonly mode: PowerPolicyMode
+}
+
+/** Supported power-software authority modes. */
+export type PowerPolicyMode = 'review' | 'fix'
+```
+
+来源：[`packages/power/power-policy/src/index.ts:72`](../packages/power/power-policy/src/index.ts)
+
+<a id="deepseek-aidsh-power-prompt"></a>
+
+## `@deepseek-ai/dsh-power-prompt`
+
+需要：`systemPrompt`
+
+```ts config-catalog
+/** Deployment facts rendered by the power prompt's environment section. */
+export interface Config {
+  /** File-reading path available for encrypted or ordinary source files. */
+  sourceAccess?: PowerSourceAccess
+  /** Whether the current composition is review-only or allows task-scoped source edits. */
+  sourceMutation?: PowerSourceMutation
+  /** Whether the current composition exposes only static checks or also build and test execution. */
+  verification?: PowerVerification
+}
+
+/** Source access modes described to the power-software agent. */
+export type PowerSourceAccess = 'native' | 'powershell-fixed'
+
+/** Source mutation modes described to the power-software agent. */
+export type PowerSourceMutation = 'read-only' | 'task-scoped'
+
+/** Verification modes described to the power-software agent. */
+export type PowerVerification = 'static-only' | 'build-test'
+```
+
+来源：[`packages/power/power-prompt/src/index.ts:29`](../packages/power/power-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -3139,6 +3234,7 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-power-desktop`（[`packages/bundle/power-desktop/src/index.ts`](../packages/bundle/power-desktop/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

@@ -11,6 +11,8 @@
  * composed by applying each bundle's patch list in `dsh.profile.bundles` order over
  * an empty entry list, then the profile's own patches, then any launcher
  * layers (`--patch` files and flag-derived patches).
+ * The shipped `power` profile is sealed: its bundle tuple is fixed and it
+ * accepts no profile-owned patch file.
  *
  * Module resolution is two-anchor by construction: a bundle name resolves
  * first from the dsh installation (the launcher's own package), then from the
@@ -114,6 +116,19 @@ export function resolveProfileDir(name: string, home: string = resolveDshHome())
 export const PROFILE_TEMPLATES: Record<string, readonly string[]> = {
   web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+  power: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-power-desktop'],
+}
+
+/** The shipped profile whose composition cannot be extended by user layers. */
+export const SEALED_PROFILE_NAME = 'power'
+
+/**
+ * Return whether `name` identifies the shipped sealed profile.
+ * @param name - profile name from the launcher.
+ * @returns true only for the installation-owned Power Desktop profile.
+ */
+export function isSealedProfile(name: string): boolean {
+  return name === SEALED_PROFILE_NAME
 }
 
 /** Installation-owned bundle tuples normalized to the shipped template. */
@@ -143,13 +158,15 @@ autoInstallPeers: false
 `
 
 /**
- * Initialize a profile directory: manifest, empty user patch layer, and the
- * pnpm settings out-of-tree plugins need. Existing files are never touched,
- * so re-running is a no-op on an initialized profile.
+ * Initialize a profile directory: manifest, optional empty user patch layer,
+ * and the pnpm settings out-of-tree plugins need. Existing files are never
+ * touched, so re-running is a no-op on an initialized profile.
  * @param dir - the profile directory from {@link resolveProfileDir}.
  * @param bundles - the initial `dsh.profile.bundles` layer list.
+ * @param createUserPatch - create `cordis.patch.yml`; sealed shipped profiles
+ * pass false because the presence of that layer is rejected at boot.
  */
-export function initProfile(dir: string, bundles: readonly string[]): void {
+export function initProfile(dir: string, bundles: readonly string[], createUserPatch = true): void {
   mkdirSync(dir, { recursive: true })
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath)) {
@@ -162,7 +179,7 @@ export function initProfile(dir: string, bundles: readonly string[]): void {
     writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n')
   }
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
-  if (!existsSync(patchPath)) writeFileSync(patchPath, PROFILE_PATCH_TEMPLATE)
+  if (createUserPatch && !existsSync(patchPath)) writeFileSync(patchPath, PROFILE_PATCH_TEMPLATE)
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (!existsSync(workspacePath)) writeFileSync(workspacePath, PROFILE_PNPM_WORKSPACE)
 }
@@ -311,6 +328,22 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
   return normalized
 }
 
+/** Reject a modified bundle tuple for an installation-owned sealed profile. */
+function assertSealedProfileManifest(
+  binName: string, name: string, dir: string, manifest: ProfileManifest,
+): void {
+  if (!isSealedProfile(name)) return
+  const expected = PROFILE_TEMPLATES[name]
+  const bundles = manifest.dsh?.profile?.bundles
+  /* v8 ignore next -- SEALED_PROFILE_NAME always has a shipped template */
+  if (expected === undefined || bundles === undefined || !sameBundles(bundles, expected)) {
+    throw new Error(
+      `${binName}: sealed profile ${JSON.stringify(name)} at ${dir} must use exactly these bundles in order: `
+      + (expected ?? []).map(value => JSON.stringify(value)).join(', '),
+    )
+  }
+}
+
 /**
  * Resolve a package's root directory from one anchor without depending on the
  * package exporting `./package.json` (`require.resolve` would need that):
@@ -327,6 +360,15 @@ function packageDirFromAnchor(anchor: string, packageName: string): string | und
     if (existsSync(join(candidate, 'package.json'))) return candidate
   }
   return undefined
+}
+
+/** Resolve a sealed profile bundle only from the running dsh installation. */
+function resolveSealedBundleDir(binName: string, packageName: string, installAnchor: string): string {
+  const dir = packageDirFromAnchor(installAnchor, packageName)
+  if (dir !== undefined) return dir
+  throw new Error(
+    `${binName}: cannot resolve sealed profile bundle ${JSON.stringify(packageName)} from the dsh installation`,
+  )
 }
 
 /**
@@ -380,13 +422,16 @@ export function loadProfile(
         `${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`,
       )
     }
-    initProfile(dir, template)
+    initProfile(dir, template, !isSealedProfile(name))
   }
   const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  assertSealedProfileManifest(binName, name, dir, manifest)
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
-    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
+    const packageDir = isSealedProfile(name)
+      ? resolveSealedBundleDir(binName, packageName, installAnchor)
+      : resolveBundleDir(binName, packageName, installAnchor, dir)
     const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
     const declared = bundleManifest.dsh?.bundle?.patch
     if (declared === undefined) {
@@ -396,6 +441,15 @@ export function loadProfile(
     return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
   })
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+  if (options.userLayer !== false && isSealedProfile(name)) {
+    if (existsSync(patchPath)) {
+      throw new Error(
+        `${binName}: sealed profile ${JSON.stringify(name)} rejects profile patch file ${patchPath}; `
+        + 'remove the file or use --dump-default-config',
+      )
+    }
+    return { name, dir, layers, patchPath, patches: [] }
+  }
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
