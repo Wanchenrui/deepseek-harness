@@ -133,20 +133,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'agentPresets',
     summary: 'Registry over the deployment\'s agent presets.',
-    description: 'Registry over the deployment\'s agent presets.\n\nDiscovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read.',
+    description: 'Registry over the deployment\'s agent presets.\n\nDiscovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read. A configured allowlist filters each fresh result before any caller can use it.',
     methods: [
       {
         signature: 'async list(): Promise<AgentPreset[]>',
-        description: 'Every preset the configured roots currently supply.',
+        description: 'Every permitted preset the configured roots currently supply.',
         parameters: [],
-        returns: 'the presets, first-root-wins per id.',
+        returns: 'the filtered presets, first-root-wins per id.',
       },
       {
         signature: 'async resolve(id?: string): Promise<AgentPreset>',
         description: 'Resolve one preset by id.\n\nA broken preset resolves — deleting one, reading one, and reporting one all need the row — and the mounting paths refuse it AFTER resolution through resolveMountable.',
         parameters: [{ name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
         returns: 'the resolved preset.',
-        throws: ['when no configured root supplies that id.'],
+        throws: ['when the id is disallowed or no configured root supplies it.'],
       },
       {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
@@ -179,7 +179,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async copy(from: string, id: string, name?: string): Promise<void>',
         description: 'Create a locally authored preset by copying an existing one whole.\n\nCopy is the only authoring write. Composition text never crosses this seam: the source is named by id and its directory is copied as it stands, so the copy is exactly as loadable as its source and authoring grants no capability the roster did not already carry. The copy is NOT mounted to validate — a source that mounts today yields a copy that mounts today.',
         parameters: [{ name: 'from', description: 'the preset the copy starts from; shipped presets are the primary source, so any trust is accepted.' }, { name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'name', description: 'display name for the copy; absent falls back to the id.' }],
-        throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
+        throws: ['when the source is unknown, the id is disallowed, unusable, or already taken, or the deployment configures no writable root.'],
       },
       {
         signature: 'async remove(id: string): Promise<void>',

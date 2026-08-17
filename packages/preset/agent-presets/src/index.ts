@@ -33,7 +33,9 @@ import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import { PresetExistsError } from './authoring.ts'
-import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
+import {
+  PRESET_ID, PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot,
+} from './preset.ts'
 import type {} from './types.ts'
 
 /** Settings namespace carrying the user's chosen default preset. */
@@ -77,7 +79,8 @@ declare module '@deepseek-ai/cordis' {
  *
  * Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every
  * call so a preset authored while the process runs is visible immediately,
- * and a preset deleted underneath a picker disappears from the next read.
+ * and a preset deleted underneath a picker disappears from the next read. A
+ * configured allowlist filters each fresh result before any caller can use it.
  */
 export class AgentPresets extends Service {
   static inject = ['loader']
@@ -85,6 +88,7 @@ export class AgentPresets extends Service {
   /** Runtime schema for the preset roster. */
   static Config = z.object({
     default: z.string().required(),
+    allowedIds: z.array(z.string()).default(undefined as unknown as string[]),
     roots: z.array(z.object({
       path: z.string().required(),
       trust: z.union(['system', 'user'] as const).default('user'),
@@ -103,6 +107,9 @@ export class AgentPresets extends Service {
    * locally authored directory that claimed its name.
    */
   private readonly resolvedRoots: readonly PresetRoot[]
+
+  /** Frozen membership of a deployment-pinned roster; undefined keeps discovery unrestricted. */
+  private readonly allowedIds: ReadonlySet<string> | undefined
 
   /**
    * The user layer over `config.default`, present only while a settings
@@ -128,7 +135,9 @@ export class AgentPresets extends Service {
   private readonly selfCtx: Context
 
   constructor(ctx: Context, public config: Config) {
+    const allowedIds = validateAllowedIds(config)
     super(ctx, 'agentPresets')
+    this.allowedIds = allowedIds
     this.selfCtx = ctx
     this.resolvedRoots = config.includeUserRoot
       ? [...config.roots, { path: dshHomePath(USER_PRESET_DIR), trust: 'user' }]
@@ -186,18 +195,23 @@ export class AgentPresets extends Service {
    *
    * Read per call rather than cached: the settings document is hot-reloaded, so
    * changing the default takes effect on the next session created and leaves
-   * every running session on the preset it was composed from.
+   * every running session on the preset it was composed from. A setting outside
+   * the deployment allowlist falls back to the validated config default.
    */
   get defaultId(): string {
-    return this.settings?.get().default ?? this.config.default
+    const selected = this.settings?.get().default
+    return selected !== undefined && this.isAllowed(selected) ? selected : this.config.default
   }
 
   /**
-   * Every preset the configured roots currently supply.
-   * @returns the presets, first-root-wins per id.
+   * Every permitted preset the configured roots currently supply.
+   * @returns the filtered presets, first-root-wins per id.
    */
   async list(): Promise<AgentPreset[]> {
-    return await discoverPresets(this.resolvedRoots)
+    const presets = await discoverPresets(this.resolvedRoots)
+    const allowedIds = this.allowedIds
+    if (allowedIds === undefined) return presets
+    return presets.filter(preset => allowedIds.has(preset.id))
   }
 
   /**
@@ -208,7 +222,7 @@ export class AgentPresets extends Service {
    * through {@link resolveMountable}.
    * @param id - the preset id, or `undefined` for {@link defaultId}.
    * @returns the resolved preset.
-   * @throws when no configured root supplies that id.
+   * @throws when the id is disallowed or no configured root supplies it.
    */
   async resolve(id?: string): Promise<AgentPreset> {
     const wanted = id ?? this.defaultId
@@ -374,15 +388,19 @@ export class AgentPresets extends Service {
    * primary source, so any trust is accepted.
    * @param id - the new preset's id, which becomes its directory name.
    * @param name - display name for the copy; absent falls back to the id.
-   * @throws when the source is unknown, the id is unusable or already taken,
-   * or the deployment configures no writable root.
+   * @throws when the source is unknown, the id is disallowed, unusable, or
+   * already taken, or the deployment configures no writable root.
    */
   async copy(from: string, id: string, name?: string): Promise<void> {
     const source = await this.resolve(from)
+    const listed = await this.list()
+    if (!this.isAllowed(id)) {
+      throw new UnknownPresetError(id, listed.map(preset => preset.id))
+    }
     // The roster check refuses ids any root supplies — shipped ones included,
     // since a user directory named like a shipped preset is shadowed by it.
     // The disk check inside copyComposition only sees the writable root.
-    if ((await this.list()).some(preset => preset.id === id)) {
+    if (listed.some(preset => preset.id === id)) {
       throw new PresetExistsError(id)
     }
     await copyComposition(this.resolvedRoots, source, id, name)
@@ -487,6 +505,11 @@ export class AgentPresets extends Service {
     return (await this.ensureStanding(preset)).key
   }
 
+  /** Whether an id belongs to this deployment's roster. */
+  private isAllowed(id: string): boolean {
+    return this.allowedIds?.has(id) ?? true
+  }
+
   /** Resolve (or create, single-flight) the standing mount of one preset. */
   private async ensureStanding(preset: AgentPreset): Promise<StandingMount> {
     const pending = this.standing.get(preset.id)
@@ -567,6 +590,29 @@ interface StandingMount {
   readonly scope: Scope
   /** Stamp of the composition file this generation was mounted from. */
   readonly stamp: CompositionStamp
+}
+
+/** Validate and snapshot the optional deployment roster allowlist. */
+function validateAllowedIds(config: Config): ReadonlySet<string> | undefined {
+  const configured = config.allowedIds
+  if (configured === undefined) return undefined
+  if (configured.length === 0) {
+    throw new Error('agent-presets: allowedIds must contain at least one preset id')
+  }
+  const allowed = new Set<string>()
+  for (const id of configured) {
+    if (!PRESET_ID.test(id)) {
+      throw new Error(`agent-presets: allowedIds entry ${JSON.stringify(id)} must match ${String(PRESET_ID)}`)
+    }
+    if (allowed.has(id)) {
+      throw new Error(`agent-presets: allowedIds contains duplicate preset id ${JSON.stringify(id)}`)
+    }
+    allowed.add(id)
+  }
+  if (!allowed.has(config.default)) {
+    throw new Error(`agent-presets: allowedIds must contain configured default ${JSON.stringify(config.default)}`)
+  }
+  return allowed
 }
 
 export default AgentPresets

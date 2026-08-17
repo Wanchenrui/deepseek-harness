@@ -529,6 +529,19 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 
 Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
 
+### `power/*`
+
+<a id="poweranalysis-state--log-only"></a>
+
+#### `power/analysis-state` — log-only
+
+```ts persistence-catalog
+/** Complete replayable power-analysis state after one accepted update. */
+'power/analysis-state': PowerAnalysisStateEvent
+```
+
+Source: [`packages/power/power-analysis/src/domain.ts:15`](../packages/power/power-analysis/src/domain.ts)
+
 ### `request/*`
 
 <a id="requestcontext--log-only"></a>

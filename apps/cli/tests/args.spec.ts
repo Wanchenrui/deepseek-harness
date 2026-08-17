@@ -28,6 +28,8 @@ describe('parseDshArgs', () => {
     expect(parse(['web'])).toEqual({ mode: 'profile', profile: 'web', patches: [], args: [] })
     expect(parse(['web', '--patch', 'web.yml']))
       .toEqual({ mode: 'profile', profile: 'web', patches: ['web.yml'], args: [] })
+    expect(parse(['--profile', 'power']))
+      .toEqual({ mode: 'profile', profile: 'power', patches: [], args: [] })
   })
 
   it('ends the launcher flags at the first token it does not own', () => {
@@ -68,6 +70,8 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
     expect(parse(['web', '--dump-default-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
+    expect(parse(['--profile', 'power', '--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'power', defaultOnly: false, patches: [] })
   })
 
   it('rejects missing profile, removed flags, and contradictory inputs', () => {
@@ -95,6 +99,9 @@ describe('parseDshArgs', () => {
     expect(exitCode(['plugin', 'add', 'x'])).toBe(1) // --profile required
     expect(exitCode(['plugin', '--profile', 'tui'])).toBe(1) // nothing to forward
     expect(exitCode(['plugin', '--profile', ''])).toBe(1)
+    expect(exitCode(['plugin', '--profile', 'power', 'add', 'x'])).toBe(1)
+    expect(exitCode(['--profile', 'power', '--patch', 'x.yml'])).toBe(1)
+    expect(exitCode(['--profile', 'power', '--dump-config', '--patch', 'x.yml'])).toBe(1)
     expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
   })
 

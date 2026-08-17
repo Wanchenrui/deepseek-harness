@@ -21,6 +21,7 @@ import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it } from 'vitest'
 import AgentPresets, { COMPOSITION_FILE, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
+import type { Config } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const ROOTS = [{ path: join(FIXTURES, 'system'), trust: 'system' as const }]
@@ -32,6 +33,7 @@ const NS = settingsNamespace(SETTINGS_NAMESPACE)
  */
 async function harness(
   extraRoots: readonly { path: string; trust: 'system' | 'user' }[] = [],
+  roster: Partial<Config> = {},
 ): Promise<{ ctx: Context; settingsFile: string; settingsFiber: { dispose: () => unknown } }> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-preset-settings-'))
   const settingsFile = join(home, 'settings.yaml')
@@ -49,7 +51,9 @@ async function harness(
   await ctx.plugin(AgentLoop, { agents: [] })
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: settingsFile, watch: false })
   await settingsFiber
-  await ctx.plugin(AgentPresets, { default: 'standard', roots: [...ROOTS, ...extraRoots], includeUserRoot: false })
+  await ctx.plugin(AgentPresets, {
+    default: 'standard', roots: [...ROOTS, ...extraRoots], includeUserRoot: false, ...roster,
+  })
   return { ctx, settingsFile, settingsFiber }
 }
 
@@ -145,6 +149,22 @@ describe('the default preset as a user setting', () => {
 
     await expect(ctx.agentPresets.resolve())
       .rejects.toThrow(/preset "no-such-preset" not found/)
+  })
+
+  it('falls back from a disallowed user default to the configured default', async () => {
+    const { ctx } = await harness([], { allowedIds: ['standard'] })
+    await ctx.settings.update(NS, { default: 'minimal' })
+
+    expect(ctx.agentPresets.defaultId).toBe('standard')
+    expect((await ctx.agentPresets.resolve()).id).toBe('standard')
+  })
+
+  it('keeps an allowed but currently absent user default as a deferred failure', async () => {
+    const { ctx } = await harness([], { allowedIds: ['standard', 'future'] })
+    await ctx.settings.update(NS, { default: 'future' })
+
+    expect(ctx.agentPresets.defaultId).toBe('future')
+    await expect(ctx.agentPresets.resolve()).rejects.toThrow(/preset "future" not found/)
   })
 })
 

@@ -8,11 +8,11 @@ The mechanism is two seams. Entry contexts chain to the context a subtree was pl
 
 ## Service: `AgentPresets` (ctx key: `agentPresets`)
 
-Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call, so a preset authored while the process runs is visible immediately and a deleted one disappears from the next read. Discovery also owns preset **health**: a directory whose composition is missing or unloadable (unparsable YAML — checked with the loader's own dialect, `!!js` included — or not a list of named plugin rows) is listed with a `broken` reason rather than skipped, because a skipped directory would still occupy its id on disk while every surface shows nothing to delete. A directory whose name is not a usable preset id (`[a-z0-9][a-z0-9-]*`) is skipped outright: no copy could ever claim it.
+Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call, so a preset authored while the process runs is visible immediately and a deleted one disappears from the next read. An `allowedIds` deployment filter, when configured, is applied after root precedence and hides every other id from listing, resolution, mounting, cold reads, and authoring. Discovery also owns preset **health**: a directory whose composition is missing or unloadable (unparsable YAML — checked with the loader's own dialect, `!!js` included — or not a list of named plugin rows) is listed with a `broken` reason rather than skipped, because a skipped directory would still occupy its id on disk while every surface shows nothing to delete. A directory whose name is not a usable preset id (`[a-z0-9][a-z0-9-]*`) is skipped outright: no copy could ever claim it.
 
-- `ctx.agentPresets.defaultId: string` The preset id mounted when a caller names none.
-- `ctx.agentPresets.list(): Promise<AgentPreset[]>` Every preset the configured roots currently supply, earlier root winning a duplicate id; broken presets included, each carrying its reason.
-- `ctx.agentPresets.resolve(id?): Promise<AgentPreset>` One preset by id, defaulting to `defaultId`. Throws naming the available ids when no root supplies it. A broken preset resolves — deleting, reading, and reporting one all need the row.
+- `ctx.agentPresets.defaultId: string` The preset id mounted when a caller names none; a user setting outside `allowedIds` falls back to `config.default`.
+- `ctx.agentPresets.list(): Promise<AgentPreset[]>` Every permitted preset the configured roots currently supply, earlier root winning a duplicate id; broken presets included, each carrying its reason.
+- `ctx.agentPresets.resolve(id?): Promise<AgentPreset>` One permitted preset by id, defaulting to `defaultId`. Throws naming the available ids when no permitted root row supplies it. A broken preset resolves — deleting, reading, and reporting one all need the row.
 - `ctx.agentPresets.mount(agentCtx, id?): Promise<AgentPreset>` Compose one agent from a preset — ensure its standing mount (single-flight) and parent the agent's scope key to it — returning the preset for the caller to record. Refuses a broken preset up front with its discovery-reported reason, so every unloadable shape fails the same way before the loader is involved.
 - `ctx.agentPresets.composeFrom(agentCtx, parentCtx): string | undefined` Join one agent to the standing composition another already runs on, returning the preset id joined — `undefined` when the parent joined none, which is the rosterless deployment and not an error. A bind rather than a mount, so it is synchronous and has no composition failure mode; it still rejects a caller error (an unscoped context, or an agent that already joined).
 - `ctx.agentPresets.composedPreset(agentCtx): string | undefined` The preset one LIVE agent runs on, read from its scope chain rather than from its session — the only answer available for an agent whose durable header is still being built.
@@ -21,7 +21,7 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 - `ctx.agentPresets.roots: readonly PresetRoot[]` The roots this roster scans — every configured root in order, then the derived harness-home root. Not `config.roots`: read this to answer whether a roster is composed at all, so one derivation decides it.
 - `ctx.agentPresets.authorable: boolean` Whether any of those roots has `user` trust, and therefore whether a preset can be created at all.
 - `ctx.agentPresets.read(id): Promise<string>` One preset's composition text, exactly as stored.
-- `ctx.agentPresets.copy(from, id, name?): Promise<void>` Create a locally authored preset by copying an existing one's whole directory — the only authoring write. No composition text crosses this seam, so a copy is exactly as loadable as its source; the copied metadata keeps the source's description but never its name or roster order, and `name` (or the id fallback) is what distinguishes the rows.
+- `ctx.agentPresets.copy(from, id, name?): Promise<void>` Create a locally authored preset by copying an existing one's whole directory — the only authoring write. Both ids must belong to `allowedIds` when configured. No composition text crosses this seam, so a copy is exactly as loadable as its source; the copied metadata keeps the source's description but never its name or roster order, and `name` (or the id fallback) is what distinguishes the rows.
 - `ctx.agentPresets.remove(id): Promise<void>` Delete a locally authored preset; joined sessions keep their standing mount. Clears the user default when it named the preset just deleted: storing a default that does not exist yet is deliberate, but one this call removed will never be supplied again and would fail every session created without an explicit pick.
 
 `AgentPreset` carries `id` (the directory name), `trust` (`system` or `user`, from the root it was found under), `path` (the absolute composition file), and — only when the preset cannot compose a session — `broken` (one human-readable reason, shown verbatim on roster surfaces).
@@ -44,6 +44,8 @@ The creation header names the preset a session STARTED with; `resolveSessionPres
 
 The header stays frozen because it is a creation fact. A switch is an `agent-preset/selected` session event appended after the swap commits, which is what the model-visible ⟺ logged rule requires: the preset decides the tool schemas and prompt sections the model sees, so it has to be reconstructable from the log. The service re-emits that committed fact as the non-scoped cordis event `agent-preset/selected(sessionId, agentPreset)` declared by the client-safe `./types` export, allowing remote consumers to invalidate session-derived state without importing Host runtime types. Reading the header alone would rebuild a switched session under the composition it was created with, replaying history the new tool set cannot act on — the exact hazard the blank-only lock exists to prevent.
 
+A resume or fork passes that stored id explicitly. If a later deployment excludes it through `allowedIds`, reconstruction fails as an unknown preset; it never substitutes the current default and silently changes the session's tool and prompt history.
+
 ### Switching a blank agent
 
 `recompose()` unmounts the installed subtree and mounts the new one, because two compositions cannot coexist — both would register the same tool names into one layer. A failed mount restores the previous composition rather than leaving the agent with nothing, and an unknown id is rejected before anything is torn down.
@@ -52,11 +54,12 @@ The restriction to a produced-nothing agent is a product rule, not a mechanical 
 
 ## Authoring
 
-Authoring is copy-only. A new preset is a whole-directory copy of an existing one — composition, metadata, skill directories, assets — landed under the first `user` root; the inputs are two ids the service resolves against its own roots plus an optional display name, so no caller ever supplies composition text and a copy grants nothing the roster did not already carry. Everything after creation happens in the preset's own files. `copy()` refuses three things before anything lands:
+Authoring is copy-only. A new preset is a whole-directory copy of an existing one — composition, metadata, skill directories, assets — landed under the first `user` root; the inputs are two ids the service resolves against its own roots plus an optional display name, so no caller ever supplies composition text and a copy grants nothing the roster did not already carry. Everything after creation happens in the preset's own files. `copy()` refuses four things before anything lands:
 
 - **An id that is not `[a-z0-9][a-z0-9-]*`.** The id becomes a directory name, so containment is a property of the id itself rather than of a path check after the fact — `../escape`, `a/b`, and an absolute path are all rejected as ids.
 - **An id that is already taken.** A copy never overwrites: any root supplying the id refuses it (a user directory named like a shipped preset would be shadowed by it), and a directory occupying the name on disk refuses it too. Discovery lists such a directory as a broken preset, so the refusal's way out — delete it — is on the same page that reported it.
 - **An unknown source.** The source may be any trust — copying a shipped preset is the primary case — but it must exist; a failed copy rolls its half-made directory back rather than leaving one discovery cannot see.
+- **An id outside `allowedIds`.** A deployment-pinned roster cannot author a row that every read would hide.
 
 The copied tree is re-tightened to owner-only (`0o600` files keeping their owner-execute bit, `0o700` directories), symlinks are dereferenced so the copy is self-contained, and the root is created on first copy — a deployment configuring a user root that does not exist yet is the normal first-run state. The copied `preset.yml` is rewritten: the source's description is kept for the author to edit in place, but its name and roster `order` are dropped — a copy presenting itself identically to its source, or sorted into the shipped set's declared order, would make the roster stop distinguishing them. `remove()` refuses a preset that ships with the deployment; the shipped set is the known-good compositions copies start from.
 
@@ -86,10 +89,13 @@ Every read failure degrades to no metadata — absent, malformed, wrongly typed,
 | Field | Default | Meaning |
 |---|---|---|
 | `default` | required | Preset id mounted when a caller names none |
+| `allowedIds` | unset | Optional deployment roster allowlist |
 | `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`) |
 | `includeUserRoot` | `true` | Append `<dshHome>/.agent-presets` as a `user` root, after every configured root |
 
 An absent root supplies no presets rather than failing: the user root does not exist until the first locally authored preset, and naming a default no root supplies already fails loud at resolution.
+
+When present, `allowedIds` must be non-empty, contain valid duplicate-free preset ids, and include `default`; invalid configuration fails during service construction. The service snapshots the ids, then applies them after root discovery. An allowed id may be absent on disk so a deployment can reserve a future authored preset, but resolution still fails until a root supplies it. Omitting `allowedIds` preserves the unrestricted roster.
 
 ### The writable root is this package's, the shipped root is the app's
 
@@ -110,7 +116,7 @@ agent-presets:
   default: minimal
 ```
 
-The value is read per resolution rather than snapshotted, so a hot-reloaded document takes effect on the next session created and every running session stays on the preset it was composed from. Clearing the user field re-inherits the composition default. A default naming a preset no root supplies is stored without complaint and fails at the next `resolve()` — the roster is a live directory, so a name absent now may exist by the time a session asks for it.
+The value is read per resolution rather than snapshotted, so a hot-reloaded document takes effect on the next session created and every running session stays on the preset it was composed from. Clearing the user field re-inherits the composition default. With `allowedIds`, a user value outside the allowlist falls back to `config.default`; an allowed value naming a preset no root currently supplies is stored without complaint and fails at the next `resolve()` — the roster is a live directory, so the name may exist by the time a session asks for it.
 
 ## What a mount rejects
 

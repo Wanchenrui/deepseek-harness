@@ -15,7 +15,8 @@
   ],
   "ignoreWorkspaces": [
     "vendor/*",
-    "python/sdk-runtime"
+    "python/sdk-runtime",
+    "apps/power-desktop-runtime"
   ],
   "ignoreDependencies": [
     "@yarnpkg/cli-dist",
@@ -200,6 +201,16 @@
       ]
     },
     "packages/client/ui-workflow-run": {
+      "entry": [
+        "tests/**/*.spec.tsx"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "tests/**/*.tsx"
+      ]
+    },
+    "packages/client/ui-power-workbench": {
       "entry": [
         "tests/**/*.spec.tsx"
       ],

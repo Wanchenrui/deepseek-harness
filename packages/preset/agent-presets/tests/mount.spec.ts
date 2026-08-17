@@ -13,7 +13,8 @@ import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentPresets, {
-  COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, PresetMountError, serviceForAgent,
+  COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, PresetMountError,
+  resolveSessionPreset, serviceForAgent, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { Config } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
@@ -341,6 +342,64 @@ describe('the preset roster', () => {
   })
 })
 
+describe('a deployment-pinned preset roster', () => {
+  const PINNED: Config = {
+    default: 'standard',
+    allowedIds: ['standard'],
+    roots: ROOTS,
+    includeUserRoot: false,
+  }
+
+  it('lists and resolves only allowed ids', async () => {
+    const scoped = await harness(PINNED)
+
+    expect((await scoped.agentPresets.list()).map(preset => preset.id)).toEqual(['standard'])
+    await expect(scoped.agentPresets.resolve('minimal')).rejects.toMatchObject({
+      presetId: 'minimal',
+      available: ['standard'],
+    })
+    await expect(scoped.agentPresets.copy('standard', 'mine'))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+  })
+
+  it('rejects a disallowed id at every composition entry without moving an agent', async () => {
+    const scoped = await harness(PINNED)
+    const agent = await agentOn(scoped, 'sess-pinned', 'standard')
+
+    await expect(agentOn(scoped, 'sess-pinned-denied', 'minimal'))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+    expect(scoped.agents.get(SessionId('sess-pinned-denied'))).toBeUndefined()
+    await expect(scoped.agentPresets.recompose(agent.ctx, 'minimal'))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+    expect(scoped.agentPresets.composedPreset(agent.ctx)).toBe('standard')
+    expect(toolNames(scoped, agent)).toEqual(['alpha'])
+    await expect(scoped.agentPresets.standingKeyFor('minimal'))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+  })
+
+  it('fails closed when resume or fork replays a stored disallowed id', async () => {
+    const scoped = await harness(PINNED)
+    const storedPreset = resolveSessionPreset({
+      header: {
+        version: 0,
+        id: SessionId('legacy'),
+        createdAt: 1,
+        delegationDepth: 0,
+        agentPreset: 'minimal',
+      },
+      events: [],
+    })
+
+    expect(storedPreset).toBe('minimal')
+    await expect(agentOn(scoped, 'sess-resumed', storedPreset))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+    await expect(agentOn(scoped, 'sess-forked', storedPreset))
+      .rejects.toBeInstanceOf(UnknownPresetError)
+    expect(scoped.agents.get(SessionId('sess-resumed'))).toBeUndefined()
+    expect(scoped.agents.get(SessionId('sess-forked'))).toBeUndefined()
+  })
+})
+
 describe('composing from a broken preset', () => {
   /** A roster whose only user preset carries `composition`. */
   async function rosterWith(composition: string): Promise<Context> {
@@ -465,6 +524,8 @@ describe('replacing a composition', () => {
       selected.push([sessionId, agentPreset])
     })
 
+    agent.session.append('turn/start', { turn: 1 })
+    expect(selected).toEqual([])
     agent.session.append('agent-preset/selected', { agentPreset: 'minimal' })
 
     expect(selected).toEqual([[SessionId('sess-selected'), 'minimal']])

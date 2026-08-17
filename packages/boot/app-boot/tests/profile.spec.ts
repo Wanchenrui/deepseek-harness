@@ -4,7 +4,9 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -12,6 +14,7 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
+  isSealedProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -69,6 +72,13 @@ describe('initProfile', () => {
     initProfile(dir, ['other'])
     expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(['@deepseek-ai/dsh-base'])
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('- id: x')
+  })
+
+  it('can initialize a shipped sealed profile without a user patch file', () => {
+    const dir = resolveProfileDir('power', tmp())
+    initProfile(dir, PROFILE_TEMPLATES.power ?? [], false)
+    expect(existsSync(join(dir, PROFILE_PATCH_FILENAME))).toBe(false)
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(PROFILE_TEMPLATES.power)
   })
 })
 
@@ -159,6 +169,57 @@ describe('loadProfile', () => {
     }
     expect(readProfileManifest('t', resolveProfileDir('web', home)).dsh?.profile?.bundles)
       .toEqual([...PROFILE_TEMPLATES.web ?? []])
+  })
+
+  it('keeps the power template installation-owned and rejects every profile patch file', () => {
+    const expected = [
+      '@deepseek-ai/dsh-base',
+      '@deepseek-ai/dsh-web-app',
+      '@deepseek-ai/dsh-power-desktop',
+    ]
+    expect(PROFILE_TEMPLATES.power).toEqual(expected)
+    expect(isSealedProfile('power')).toBe(true)
+    expect(isSealedProfile('web')).toBe(false)
+
+    const anchor = stageInstallation(Object.fromEntries(
+      expected.map(name => [name, { patch: '[]\n' }]),
+    ))
+    const home = tmp()
+    const profile = loadProfile('t', 'power', anchor, home)
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(expected)
+    expect(existsSync(profile.patchPath)).toBe(false)
+
+    writeFileSync(profile.patchPath, '[]\n')
+    expect(() => loadProfile('t', 'power', anchor, home)).toThrow('rejects profile patch file')
+    expect(loadProfile('t', 'power', anchor, home, { userLayer: false }).patches).toEqual([])
+
+    writeProfileManifest(profile.dir, {
+      name: 'dsh-profile-power',
+      dsh: { profile: { bundles: [...expected, 'custom-bundle'] } },
+    })
+    expect(() => loadProfile('t', 'power', anchor, home, { userLayer: false }))
+      .toThrow('must use exactly these bundles in order')
+  })
+
+  it('never falls back to a profile-local package for a sealed bundle', () => {
+    const expected = PROFILE_TEMPLATES.power ?? []
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('power', home)
+    initProfile(dir, expected, false)
+    const local = join(dir, 'node_modules', '@deepseek-ai', 'dsh-power-desktop')
+    mkdirSync(local, { recursive: true })
+    writeFileSync(join(local, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-power-desktop',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(local, 'cordis.patch.yml'), '[]\n')
+
+    expect(() => loadProfile('t', 'power', anchor, home))
+      .toThrow('cannot resolve sealed profile bundle "@deepseek-ai/dsh-power-desktop" from the dsh installation')
   })
 
   it('normalizes only the exact installation-owned headless bundle tuple', () => {

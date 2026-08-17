@@ -7,14 +7,19 @@
  */
 
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import {
-  loadOptionalPatches,
   loadOverlayPatches,
   renderConfigDump,
   type ConfigDumpLayer,
 } from '@deepseek-ai/dsh-app-boot'
-import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
+import {
+  assertProfileOverlayFilesAllowed,
+  homePatchPath,
+  loadProfileHomePatches,
+  prepareProfile,
+  profileRootConfigPath,
+} from './profile-boot.ts'
 
 const NAME = 'dsh'
 
@@ -28,6 +33,7 @@ const NAME = 'dsh'
  * @param patches - `--patch` overlay paths, in argv order.
  */
 export function runDumpConfig(profile: string, defaultOnly: boolean, patches: readonly string[]): void {
+  assertProfileOverlayFilesAllowed(profile, patches)
   const loaded = prepareProfile(profile, !defaultOnly)
   const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
     label: layer.packageName,
@@ -38,7 +44,7 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
       layers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
     const homePatchFile = homePatchPath()
-    const homePatches = loadOptionalPatches(NAME, homePatchFile)
+    const homePatches = loadProfileHomePatches(profile)
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })
     }
@@ -48,6 +54,6 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
     }
   }
   // The dump anchors on the same empty root file the boot includes.
-  process.stdout.write(renderConfigDump(NAME, join(loaded.dir, PROFILE_ROOT_FILENAME), layers))
+  process.stdout.write(renderConfigDump(NAME, profileRootConfigPath(loaded), layers))
 }
 /* v8 ignore stop */
