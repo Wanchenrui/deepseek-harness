@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { load } from 'js-yaml'
 
 interface PackageManifest {
   name?: string
@@ -78,7 +79,33 @@ export async function inspectRuntimeClosure(
 }
 
 async function loadWorkspacePackages(root: string): Promise<Map<string, WorkspacePackage>> {
-  const paths = globSync(['packages/*/*/package.json', 'vendor/*/package.json', 'apps/*/package.json'], { cwd: root })
+  const workspaceFile = resolve(root, 'pnpm-workspace.yaml')
+  const document = load(await readFile(workspaceFile, 'utf8')) as { packages?: unknown } | undefined
+  if (!Array.isArray(document?.packages) || document.packages.length === 0
+    || document.packages.some(pattern => typeof pattern !== 'string' || pattern.trim() === '')) {
+    throw new Error('verify-runtime-closure: pnpm-workspace.yaml must declare non-empty string package patterns.')
+  }
+  const packagePatterns = document.packages as string[]
+  const includedPatterns: string[] = []
+  const excludedPatterns: string[] = []
+  for (const rawPattern of packagePatterns) {
+    const negated = rawPattern.startsWith('!')
+    const memberPattern = (negated ? rawPattern.slice(1) : rawPattern)
+      .replaceAll('\\', '/')
+      .replace(/\/+$/, '')
+    const manifestPattern = memberPattern === '.' ? 'package.json' : `${memberPattern}/package.json`
+    const targetPatterns = negated ? excludedPatterns : includedPatterns
+    targetPatterns.push(manifestPattern)
+  }
+  if (includedPatterns.length === 0) {
+    throw new Error('verify-runtime-closure: pnpm-workspace.yaml declares no included package patterns.')
+  }
+  const excluded = new Set(globSync(excludedPatterns, { cwd: root }))
+  const paths = [...new Set([
+    ...globSync('package.json', { cwd: root }),
+    ...globSync(includedPatterns, { cwd: root }),
+  ])]
+    .filter(path => !excluded.has(path))
     .sort()
     .map(relative => resolve(root, relative))
   const result = new Map<string, WorkspacePackage>()
